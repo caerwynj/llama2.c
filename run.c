@@ -75,18 +75,31 @@ typedef struct {
 } Transformer;
 
 void malloc_run_state(RunState* s, Config* p) {
+    printf("malloc_run_state started: dim=%d, hidden_dim=%d, n_layers=%d, n_heads=%d, n_kv_heads=%d, vocab_size=%d, seq_len=%d\n",
+           p->dim, p->hidden_dim, p->n_layers, p->n_heads, p->n_kv_heads, p->vocab_size, p->seq_len);
     // we calloc instead of malloc to keep valgrind happy
     int kv_dim = (p->dim * p->n_kv_heads) / p->n_heads;
+    printf("kv_dim=%d\n", kv_dim);
     s->x = calloc(p->dim, sizeof(float));
+    printf("s->x allocated\n");
     s->xb = calloc(p->dim, sizeof(float));
+    printf("s->xb allocated\n");
     s->xb2 = calloc(p->dim, sizeof(float));
+    printf("s->xb2 allocated\n");
     s->hb = calloc(p->hidden_dim, sizeof(float));
+    printf("s->hb allocated\n");
     s->hb2 = calloc(p->hidden_dim, sizeof(float));
+    printf("s->hb2 allocated\n");
     s->q = calloc(p->dim, sizeof(float));
+    printf("s->q allocated\n");
     s->key_cache = calloc(p->n_layers * p->seq_len * kv_dim, sizeof(float));
+    printf("s->key_cache allocated\n");
     s->value_cache = calloc(p->n_layers * p->seq_len * kv_dim, sizeof(float));
+    printf("s->value_cache allocated\n");
     s->att = calloc(p->n_heads * p->seq_len, sizeof(float));
+    printf("s->att allocated\n");
     s->logits = calloc(p->vocab_size, sizeof(float));
+    printf("s->logits allocated\n");
     // ensure all mallocs went fine
     if (!s->x || !s->xb || !s->xb2 || !s->hb || !s->hb2 || !s->q
      || !s->key_cache || !s->value_cache || !s->att || !s->logits) {
@@ -141,6 +154,7 @@ void memory_map_weights(TransformerWeights *w, Config* p, float* ptr, int shared
 
 void read_checkpoint(char* checkpoint, Config* config, TransformerWeights* weights,
                      int* fd, float** data, ssize_t* file_size) {
+    printf("Opening checkpoint %s\n", checkpoint);
     FILE *file = fopen(checkpoint, "rb");
     if (!file) { fprintf(stderr, "Couldn't open file %s\n", checkpoint); exit(EXIT_FAILURE); }
     // read in the config header
@@ -148,24 +162,33 @@ void read_checkpoint(char* checkpoint, Config* config, TransformerWeights* weigh
     // negative vocab size is hacky way of signaling unshared weights. bit yikes.
     int shared_weights = config->vocab_size > 0 ? 1 : 0;
     config->vocab_size = abs(config->vocab_size);
+    printf("Read config, vocab_size: %d\n", config->vocab_size);
     // figure out the file size
     fseek(file, 0, SEEK_END); // move file pointer to end of file
     *file_size = ftell(file); // get the file size, in bytes
     fclose(file);
+    printf("File size: %ld\n", (long)*file_size);
     // memory map the Transformer weights into the data pointer
     *fd = open(checkpoint, O_RDONLY); // open in read only mode
     if (*fd == -1) { fprintf(stderr, "open failed!\n"); exit(EXIT_FAILURE); }
+    printf("Opened fd: %d\n", *fd);
     *data = mmap(NULL, *file_size, PROT_READ, MAP_PRIVATE, *fd, 0);
     if (*data == MAP_FAILED) { fprintf(stderr, "mmap failed!\n"); exit(EXIT_FAILURE); }
+    printf("mmap successful: %p\n", *data);
     float* weights_ptr = *data + sizeof(Config)/sizeof(float);
+    printf("memory map weights\n");
     memory_map_weights(weights, config, weights_ptr, shared_weights);
+    printf("memory map weights done\n");
 }
 
 void build_transformer(Transformer *t, char* checkpoint_path) {
+    printf("read_checkpoint called\n");
     // read in the Config and the Weights from the checkpoint
     read_checkpoint(checkpoint_path, &t->config, &t->weights, &t->fd, &t->data, &t->file_size);
+    printf("malloc_run_state called\n");
     // allocate the RunState buffers
     malloc_run_state(&t->state, &t->config);
+    printf("build_transformer done\n");
 }
 
 void free_transformer(Transformer* t) {
